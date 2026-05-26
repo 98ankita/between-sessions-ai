@@ -10,6 +10,9 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 file_path = "data/checkins.csv"
 
+if "followup_counter" not in st.session_state:
+    st.session_state["followup_counter"] = 0
+
 page = st.sidebar.radio(
     "Choose view",
     ["Patient Check-in", "Therapist Dashboard"]
@@ -67,7 +70,7 @@ You are not a therapist, doctor, or crisis counselor.
 Do not diagnose. Do not give medical advice.
 
 The user already completed a check-in and received an AI reflection.
-Now they are responding to the follow-up question.
+Now they are responding to one of the follow-up questions.
 
 Original journal entry:
 {original_journal}
@@ -78,10 +81,17 @@ Previous AI reflection:
 User's follow-up response:
 {user_followup}
 
-Write:
+Write a closing follow-up response.
+
+Return:
 1. A deeper reflection, 2-3 sentences.
-2. One gentle next question.
-3. One small next step.
+2. One small grounding or coping step the user can try today.
+3. One thing the user could consider discussing with their therapist or a trusted support person.
+
+Important:
+- Do not ask another follow-up question.
+- Do not continue the conversation indefinitely.
+- Keep the tone warm, grounded, and practical.
 """
 
     response = client.responses.create(
@@ -125,9 +135,9 @@ if page == "Patient Check-in":
     st.subheader("Agentic AI Mental Wellness Learning Project")
 
     st.caption(
-    "This dashboard is part of a learning project exploring how AI could summarize patient-entered check-ins. "
-    "AI summaries are for demonstration only and should not replace clinical judgment."
-)
+        "This is a learning project exploring agentic AI patterns in a mental wellness context. "
+        "It is not therapy, diagnosis, medical advice, or crisis support."
+    )
 
     st.divider()
 
@@ -193,15 +203,18 @@ if page == "Patient Check-in":
 
             all_entries.to_csv(file_path, index=False)
 
+            st.session_state["latest_journal"] = journal
+            st.session_state["latest_ai_reflection"] = ai_reflection
+
+            if "latest_deeper_reflection" in st.session_state:
+                del st.session_state["latest_deeper_reflection"]
+
             st.success("Check-in saved.")
 
             st.markdown("### Your check-in")
             st.write("**Mood:**", mood)
             st.write("**Emotions:**", ", ".join(emotions) if emotions else "No emotions selected")
             st.write("**Journal:**", journal)
-
-            st.session_state["latest_journal"] = journal
-            st.session_state["latest_ai_reflection"] = ai_reflection
 
             if "Risk level: high" in ai_reflection or "risk level: high" in ai_reflection:
                 st.error(
@@ -218,9 +231,17 @@ if page == "Patient Check-in":
 
         st.header("Continue the Reflection")
 
+        st.caption(
+            "You can respond once to the reflection above. The app will give a closing reflection, "
+            "a small next step, and something you may want to bring into a future therapy or support conversation."
+        )
+
+        followup_key = f"followup_text_{st.session_state['followup_counter']}"
+
         followup = st.text_area(
             "Want to respond to one of the follow-up questions?",
-            height=120
+            height=120,
+            key=followup_key
         )
 
         if st.button("Continue Reflection"):
@@ -234,8 +255,13 @@ if page == "Patient Check-in":
                         followup
                     )
 
-                st.markdown("### Deeper Reflection")
-                st.write(deeper_reflection)
+                st.session_state["latest_deeper_reflection"] = deeper_reflection
+                st.session_state["followup_counter"] += 1
+                st.rerun()
+
+        if "latest_deeper_reflection" in st.session_state:
+            st.markdown("### Closing Reflection")
+            st.write(st.session_state["latest_deeper_reflection"])
 
     st.divider()
 
@@ -263,8 +289,8 @@ elif page == "Therapist Dashboard":
     st.subheader("Therapist Dashboard")
 
     st.caption(
-        "This view is designed to help a clinician review patient-entered check-ins. "
-        "AI summaries are for review support only and should not replace clinical judgment."
+        "This dashboard is part of a learning project exploring how AI could summarize patient-entered check-ins. "
+        "AI summaries are for demonstration only and should not replace clinical judgment."
     )
 
     st.divider()
