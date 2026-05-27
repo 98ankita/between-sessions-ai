@@ -1,14 +1,18 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import os
 from dotenv import load_dotenv
 from openai import OpenAI
+import os
 
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-file_path = "data/checkins.csv"
+# Session-only storage.
+# Each browser session gets its own check-ins.
+# Friends using the deployed app will not see each other's entries.
+if "checkins" not in st.session_state:
+    st.session_state["checkins"] = []
 
 if "followup_counter" not in st.session_state:
     st.session_state["followup_counter"] = 0
@@ -136,12 +140,19 @@ if page == "Patient Check-in":
 
     st.caption(
         "This is a learning project exploring agentic AI patterns in a mental wellness context. "
-        "It is not therapy, diagnosis, medical advice, or crisis support."
+        "It is not therapy, diagnosis, medical advice, or crisis support. "
+        "Entries are stored only for your current browser session."
     )
 
     st.divider()
 
     st.header("Daily Check-in")
+
+    patient_name = st.text_input(
+        "Patient name",
+        value="Demo Patient",
+        help="For this learning project, names are used as demo identifiers. A real product would use unique patient IDs."
+    )
 
     mood = st.slider(
         "How is your mood today?",
@@ -181,27 +192,21 @@ if page == "Patient Check-in":
         if journal.strip() == "":
             st.warning("Please write a few lines before reflecting.")
         else:
+            clean_patient_name = patient_name.strip() if patient_name.strip() else "Demo Patient"
+
             with st.spinner("Reflecting..."):
                 ai_reflection = get_ai_reflection(mood, emotions, journal)
 
-            os.makedirs("data", exist_ok=True)
-
-            new_entry = pd.DataFrame([{
+            new_entry = {
                 "timestamp": datetime.now().isoformat(),
-                "patient_name": "Demo Patient",
+                "patient_name": clean_patient_name,
                 "mood": mood,
                 "emotions": ", ".join(emotions) if emotions else "No emotions selected",
                 "journal": journal,
                 "ai_reflection": ai_reflection
-            }])
+            }
 
-            if os.path.exists(file_path):
-                old_entries = pd.read_csv(file_path)
-                all_entries = pd.concat([old_entries, new_entry], ignore_index=True)
-            else:
-                all_entries = new_entry
-
-            all_entries.to_csv(file_path, index=False)
+            st.session_state["checkins"].append(new_entry)
 
             st.session_state["latest_journal"] = journal
             st.session_state["latest_ai_reflection"] = ai_reflection
@@ -209,9 +214,12 @@ if page == "Patient Check-in":
             if "latest_deeper_reflection" in st.session_state:
                 del st.session_state["latest_deeper_reflection"]
 
-            st.success("Check-in saved.")
+            st.session_state["followup_counter"] += 1
+
+            st.success("Check-in saved for this session.")
 
             st.markdown("### Your check-in")
+            st.write("**Patient name:**", clean_patient_name)
             st.write("**Mood:**", mood)
             st.write("**Emotions:**", ", ".join(emotions) if emotions else "No emotions selected")
             st.write("**Journal:**", journal)
@@ -267,22 +275,47 @@ if page == "Patient Check-in":
 
     st.header("Mood History")
 
-    if os.path.exists(file_path):
-        saved_entries = pd.read_csv(file_path)
-
+    if len(st.session_state["checkins"]) > 0:
+        saved_entries = pd.DataFrame(st.session_state["checkins"])
         saved_entries["timestamp"] = pd.to_datetime(saved_entries["timestamp"])
         saved_entries = saved_entries.sort_values("timestamp")
 
+        patient_options = saved_entries["patient_name"].dropna().unique()
+
+        selected_history_patient = st.selectbox(
+            "View mood history for",
+            patient_options
+        )
+
+        history_entries = saved_entries[
+            saved_entries["patient_name"] == selected_history_patient
+        ]
+
         st.line_chart(
-            saved_entries,
+            history_entries,
             x="timestamp",
             y="mood"
         )
 
-        st.header("Past Check-ins")
-        st.dataframe(saved_entries)
+        st.header("Past Check-ins for Selected Patient")
+        st.dataframe(history_entries)
     else:
-        st.info("No check-ins saved yet.")
+        st.info("No check-ins saved in this session yet.")
+
+    if len(st.session_state["checkins"]) > 0:
+        if st.button("Clear my session data"):
+            st.session_state["checkins"] = []
+
+            for key in [
+                "latest_journal",
+                "latest_ai_reflection",
+                "latest_deeper_reflection"
+            ]:
+                if key in st.session_state:
+                    del st.session_state[key]
+
+            st.session_state["followup_counter"] += 1
+            st.rerun()
 
 
 elif page == "Therapist Dashboard":
@@ -290,22 +323,20 @@ elif page == "Therapist Dashboard":
 
     st.caption(
         "This dashboard is part of a learning project exploring how AI could summarize patient-entered check-ins. "
-        "AI summaries are for demonstration only and should not replace clinical judgment."
+        "AI summaries are for demonstration only and should not replace clinical judgment. "
+        "This dashboard only shows entries from the current browser session."
     )
 
     st.divider()
 
-    if not os.path.exists(file_path):
-        st.info("No patient check-ins available yet.")
+    if len(st.session_state["checkins"]) == 0:
+        st.info("No patient check-ins available in this session yet.")
     else:
-        saved_entries = pd.read_csv(file_path)
+        saved_entries = pd.DataFrame(st.session_state["checkins"])
         saved_entries["timestamp"] = pd.to_datetime(saved_entries["timestamp"])
         saved_entries = saved_entries.sort_values("timestamp")
 
         st.header("Patients")
-
-        if "patient_name" not in saved_entries.columns:
-            saved_entries["patient_name"] = "Demo Patient"
 
         patient_list = saved_entries["patient_name"].dropna().unique()
 
