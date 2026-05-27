@@ -1,4 +1,4 @@
-# Between Sessions
+# Between Sessions - https://between-sessions-ai-jgx6j5adwvopdgctspjrne.streamlit.app/
 
 Between Sessions is a learning project exploring agentic AI patterns in a mental wellness context. It is not therapy, diagnosis, medical advice, or crisis support.
 
